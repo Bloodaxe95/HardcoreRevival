@@ -1,1 +1,3 @@
-- Updated to Minecraft 26.1
+- Added `allowTeleports` option (default: true)
+- Added `enderPearlsVanishOnKnockout` option (default: true)
+- Added "Press Escape to look around" help text

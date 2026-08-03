@@ -2,6 +2,7 @@ package net.blay09.mods.hardcorerevival.handler;
 
 
 import net.blay09.mods.balm.Balm;
+import net.blay09.mods.balm.platform.LoaderPlatforms;
 import net.blay09.mods.balm.platform.event.EventPhases;
 import net.blay09.mods.balm.platform.event.callback.LivingEntityCallback;
 import net.blay09.mods.balm.platform.event.callback.ServerPlayerCallback;
@@ -10,18 +11,18 @@ import net.blay09.mods.hardcorerevival.HardcoreRevivalManager;
 import net.blay09.mods.hardcorerevival.PlayerHardcoreRevivalManager;
 import net.blay09.mods.hardcorerevival.api.PlayerAboutToKnockOutEvent;
 import net.blay09.mods.hardcorerevival.config.HardcoreRevivalConfig;
-import net.minecraft.core.component.DataComponents;
+import net.blay09.mods.hardcorerevival.mixin.LivingEntityAccessor;
+import net.blay09.mods.hardcorerevival.tag.ModDamageTypeTags;
 import net.minecraft.core.registries.BuiltInRegistries;
 import net.minecraft.core.registries.Registries;
 import net.minecraft.server.level.ServerPlayer;
 import net.minecraft.tags.DamageTypeTags;
-import net.minecraft.world.InteractionHand;
 import net.minecraft.world.damagesource.DamageSource;
-import net.minecraft.world.damagesource.DamageTypes;
 import net.minecraft.world.entity.Entity;
 import net.minecraft.world.entity.LivingEntity;
 import net.minecraft.world.entity.Mob;
 import net.minecraft.world.entity.Pose;
+import net.minecraft.world.phys.Vec3;
 
 
 public class KnockoutHandler {
@@ -33,17 +34,26 @@ public class KnockoutHandler {
         ServerTickCallback.ServerPlayerTick.BEFORE.register(KnockoutHandler::onPlayerTick);
     }
 
-    public static boolean allowPlayerDeath(LivingEntity entity, DamageSource damageSource) {
+    public static boolean allowPlayerDeath(LivingEntity entity, DamageSource damageSource, float damage) {
         if (entity instanceof ServerPlayer player) {
             if (PlayerHardcoreRevivalManager.isKnockedOut(player)) {
                 Entity attacker = damageSource.getEntity();
                 if (attacker instanceof Mob mob) {
                     mob.setTarget(null);
                 }
-                return damageSource.is(DamageTypeTags.BYPASSES_INVULNERABILITY) || damageSource.is(HardcoreRevivalManager.NOT_RESCUED_IN_TIME);
+                if (damageSource.is(DamageTypeTags.BYPASSES_INVULNERABILITY) || bypassesKnockout(player, damageSource)) {
+                    return true;
+                }
+
+                player.setHealth(0.5f);
+                return false;
             }
 
             if (isKnockoutEnabledFor(player, damageSource)) {
+                if (checkTotemDeathProtection(player, damageSource)) {
+                    return false;
+                }
+
                 final var aboutToKnockOutEvent = new PlayerAboutToKnockOutEvent(player, damageSource);
                 PlayerAboutToKnockOutEvent.EVENT.invoker().accept(aboutToKnockOutEvent);
 
@@ -58,24 +68,18 @@ public class KnockoutHandler {
         return true;
     }
 
-    private static boolean holdsDeathProtectionItem(ServerPlayer player) {
-        for (final var hand : InteractionHand.values()) {
-            final var itemStack = player.getItemInHand(hand);
-            final var deathProtection = itemStack.get(DataComponents.DEATH_PROTECTION);
-            if (deathProtection != null) {
-                return true;
-            }
-        }
-
-        return false;
+    private static boolean checkTotemDeathProtection(ServerPlayer player, DamageSource damageSource) {
+        // LivingEntityCallback.Death is currently fired before Totem checks on Fabric, and after Totem checks on Neo/Forge.
+        // To avoid double calls into checkTotemDeathProtection, we only do it on Fabric.
+        // Balm for Minecraft 26.2 unifies the events properly.
+        return Balm.platform().name().equals(LoaderPlatforms.FABRIC)
+                && ((LivingEntityAccessor) player).callCheckTotemDeathProtection(damageSource);
     }
 
     private static boolean isKnockoutEnabledFor(ServerPlayer player, DamageSource damageSource) {
         final var server = player.level().getServer();
 
-        boolean canDamageSourceKnockout = !damageSource.is(DamageTypes.FELL_OUT_OF_WORLD) && !damageSource.is(HardcoreRevivalManager.NOT_RESCUED_IN_TIME);
-        final var damageSourceId = player.level().getServer().registryAccess().lookupOrThrow(Registries.DAMAGE_TYPE).getKey(damageSource.type());
-        if (!canDamageSourceKnockout || HardcoreRevivalConfig.getActive().instantDeathSources.contains(damageSourceId)) {
+        if (bypassesKnockout(player, damageSource)) {
             return false;
         }
 
@@ -87,13 +91,25 @@ public class KnockoutHandler {
             }
         }
 
-        if (HardcoreRevivalConfig.getActive().disableInSingleplayer && server.isSingleplayer() && server.getPlayerCount() == 1) {
+        if (HardcoreRevivalConfig.getActive().disableInNonHardcore && !server.isHardcore()) {
+            return false;
+        } else if (HardcoreRevivalConfig.getActive().disableInSingleplayer && server.isSingleplayer() && server.getPlayerCount() == 1) {
             return false;
         } else if (HardcoreRevivalConfig.getActive().disableInLonelyMultiplayer && !server.isSingleplayer() && server.getPlayerCount() == 1) {
             return false;
         }
 
-        return !holdsDeathProtectionItem(player);
+        return true;
+    }
+
+    private static boolean bypassesKnockout(ServerPlayer player, DamageSource damageSource) {
+        if (damageSource.is(HardcoreRevivalManager.NOT_RESCUED_IN_TIME) || damageSource.is(ModDamageTypeTags.BYPASSES_KNOCKOUT)) {
+            return true;
+        }
+
+        final var server = player.level().getServer();
+        final var damageSourceId = server.registryAccess().lookupOrThrow(Registries.DAMAGE_TYPE).getKey(damageSource.type());
+        return HardcoreRevivalConfig.getActive().instantDeathSources.contains(damageSourceId);
     }
 
     public static void onPlayerTick(ServerPlayer player) {
@@ -101,6 +117,9 @@ public class KnockoutHandler {
         if (PlayerHardcoreRevivalManager.isKnockedOut(player) && player.isAlive()) {
             // Make sure health stays locked at half a heart
             player.setHealth(1f);
+            player.setAirSupply(Math.max(89, player.getAirSupply()));
+
+            player.travel(Vec3.ZERO);
 
             PlayerHardcoreRevivalManager.setKnockoutTicksPassed(player, PlayerHardcoreRevivalManager.getKnockoutTicksPassed(player) + 1);
 

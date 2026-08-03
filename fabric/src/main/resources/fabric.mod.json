@@ -24,6 +24,9 @@
     ],
     "client": [
       "net.blay09.mods.hardcorerevival.fabric.client.FabricHardcoreRevivalClient"
+    ],
+    "fabric-datagen": [
+      "net.blay09.mods.hardcorerevival.fabric.datagen.ModDataGenerator"
     ]
   },
   "mixins": [
@@ -35,7 +38,7 @@
     "fabricloader": ">=${fabric_loader_version}",
     "fabric-api": "*",
     "balm-fabric": ">=${balm_version}",
-    "minecraft": ">=${minecraft_version}",
+    "minecraft": "${fabric_minecraft_version_range}",
     "java": ">=${java_version}"
   },
   "suggests": {

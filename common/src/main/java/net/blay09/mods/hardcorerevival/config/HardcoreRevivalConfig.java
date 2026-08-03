@@ -37,8 +37,11 @@ public class HardcoreRevivalConfig {
     @Comment("The amount of health to respawn with when a player was rescued, out of 20.")
     public int rescueRespawnHealth = 1;
 
-    @Comment("The food level to respawn with when a player was rescued, out of 20.")
+    @Comment("The maximum food level to respawn with when a player was rescued, out of 20.")
     public int rescueRespawnFoodLevel = 5;
+
+    @Comment("The penalty to apply to the player's food level when they were rescued, out of 20.")
+    public int rescueRespawnFoodLevelDecrease = 0;
 
     @NestedType(String.class)
     @Comment("Effects applied to a player when rescued, in the format \"effect|duration|amplifier\"")
@@ -55,6 +58,10 @@ public class HardcoreRevivalConfig {
     @Synced
     public boolean allowCommands = true;
 
+    @Comment("If true, knocked out players are still able to be teleported.")
+    @Synced
+    public boolean allowTeleports = true;
+
     @Comment("If true, knocked out players are still able to punch nearby enemies.")
     @Synced
     public boolean allowUnarmedMelee = false;
@@ -67,6 +74,9 @@ public class HardcoreRevivalConfig {
     @Synced
     public boolean allowPistols = false;
 
+    @Comment("If true, ender pearls will vanish when their owner is knocked out.")
+    public boolean enderPearlsVanishOnKnockout = true;
+
     @Comment("Set to false to remove the Accept your Fate button and force players to wait out the timer.")
     @Synced
     public boolean allowAcceptingFate = true;
@@ -76,6 +86,9 @@ public class HardcoreRevivalConfig {
 
     @Comment("If true, Hardcore Revival will not be active when playing alone in multiplayer.")
     public boolean disableInLonelyMultiplayer = false;
+
+    @Comment("If true, Hardcore Revival will only be active in hardcore worlds.")
+    public boolean disableInNonHardcore = false;
 
     @Comment("The damage sources that kill a player instantly, without a K.O. period.")
     @NestedType(Identifier.class)
